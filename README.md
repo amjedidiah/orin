@@ -1,5 +1,7 @@
 # Orin
 
+[![CI](https://github.com/amjedidiah/orin/actions/workflows/ci.yml/badge.svg)](https://github.com/amjedidiah/orin/actions/workflows/ci.yml)
+
 > From the Yoruba word _orín_ (song, harmony). Many voices, one coherent melody.
 
 You talk to Orin. Orin picks the best-fit AI model or agent for each task, sends the work with everything it needs to know, and brings the answer back, falling back to a free model when no paid one is available.

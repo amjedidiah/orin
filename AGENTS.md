@@ -4,14 +4,31 @@ Guidance for coding agents working in this repository.
 
 ## Project
 
-Orin is a personal AI proxy: one context store shared across many AI agents, with Meta's Muse models as the planner, router, synthesizer and summarizer.
+Orin routes each task to the best-fit AI model or agent, keeps one shared memory and prompt history, and falls back to a free open-weights model. Meta's Muse models do the routing, the model work and the memory.
 
-Planned stack:
+Stack:
 
-- Backend: Python + FastAPI, managed with `uv`
-- Context store: SQLite via `aiosqlite`
+- `backend/`: Python 3.12 + FastAPI, managed with `uv`; package in `src/orin/`, tests in `tests/`
+- `web/`: React + Vite + TypeScript, managed with `bun`; `/api/*` is proxied to the backend in development
 - Models: Meta Model API (`https://api.meta.ai/v1`) through the `openai` SDK; Muse Spark Open on Baseten as the open-weights host
-- Frontend: React + Vite + TypeScript
+- Planned: SQLite via `aiosqlite` for the context store; MCP server via the `mcp` SDK
+
+## Commands
+
+```sh
+# backend/
+uv sync
+uv run orin                                            # dev server on :8000
+uv run pytest
+uv run ruff check . && uv run ruff format --check . && uv run pyright
+
+# web/
+bun install
+bun run dev                                            # dev server on :5173
+bun run lint && bun run build
+```
+
+CI (`.github/workflows/ci.yml`) runs all of these on every push. Keep it green.
 
 ## Rules
 

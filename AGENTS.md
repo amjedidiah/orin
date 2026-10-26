@@ -33,6 +33,8 @@ CI (`.github/workflows/ci.yml`) runs all of these on every push. Keep it green.
 ## Rules
 
 - Commit or push only when the maintainer asks.
+- Every commit message strictly follows Conventional Commits 1.0.0: `<type>(<optional scope>): <description>`, with `type` one of `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`; imperative, lowercase description, no trailing period; optional body and footers; `!` or a `BREAKING CHANGE:` footer for breaking changes.
+- After changing files, run a CodeRabbit review against `origin/main` (`coderabbit review --agent --base origin/main --include-untracked`) and fix every valid finding before asking the maintainer to commit. Report findings you judged invalid, with the reason.
 - No AI or tool attribution in commits, PRs, code or docs (no co-author trailers, no "generated with" lines).
 - Never commit secrets. Keys live in `.env`; `.env.example` holds empty placeholders.
 - Planning files are gitignored on purpose. Never force-add ignored files.

@@ -6,15 +6,20 @@ Run from `backend/`: `uv run python scripts/smoke_spark.py`
 import asyncio
 
 from orin.config import get_settings
-from orin.llm import get_meta_client
+from orin.gateway import ModelGateway
+from orin.registry import MUSE_SPARK
 
 
 async def main() -> None:
-    response = await get_meta_client().responses.create(
-        model=get_settings().router_model,
-        input="Reply with one short sentence: what is Orin's job as a personal AI router?",
+    gateway = ModelGateway(get_settings())
+    stream = await gateway.open_text_stream(
+        MUSE_SPARK,
+        "Answer in one short sentence.",
+        "What is Orin's job as a personal AI router?",
     )
-    print(response.output_text)
+    async for chunk in stream.chunks:
+        print(chunk, end="", flush=True)
+    print(f"\n(served by {stream.served_by})")
 
 
 if __name__ == "__main__":

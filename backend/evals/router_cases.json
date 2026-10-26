@@ -1,0 +1,12 @@
+[
+  {"prompt": "Write a 300-word launch announcement for my side project, with a headline and three key features.", "expect": ["muse-spark"]},
+  {"prompt": "Plan my launch week day by day, with risks and what to do if each one happens.", "expect": ["muse-spark"]},
+  {"prompt": "Write a Python function that parses ISO dates and handles time zones, with tests.", "expect": ["muse-spark"]},
+  {"prompt": "Compare three pricing models for a developer tool and recommend one, with reasoning.", "expect": ["muse-spark"]},
+  {"prompt": "Translate 'We launch on Friday' into French.", "expect": ["muse-spark-open"]},
+  {"prompt": "Summarize this in one sentence: Orin routes each task to the best-fit model, keeps one memory, and falls back to a free model.", "expect": ["muse-spark-open"]},
+  {"prompt": "Rewrite this to sound friendlier: 'Submit your feedback by Monday.'", "expect": ["muse-spark-open"]},
+  {"prompt": "What's a good one-word name for a launch checklist?", "expect": ["muse-spark-open"]},
+  {"prompt": "Make a launch banner for my side project.", "expect": ["muse-image"], "steps": ["*", "muse-image"]},
+  {"prompt": "Draw a minimal illustration of a rocket taking off at dawn.", "expect": ["muse-image"], "steps": ["*", "muse-image"]}
+]

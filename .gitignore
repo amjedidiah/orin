@@ -31,3 +31,14 @@ backend/data/
 .DS_Store
 .idea/
 .vscode/
+
+# Vercel
+.vercel/
+.env*.local
+
+# Local agent and design tooling (never committed)
+.agents/
+.claude/
+skills-lock.json
+.impeccable/
+.playwright-mcp/

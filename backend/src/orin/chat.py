@@ -89,14 +89,14 @@ class Orchestrator:
         response = "\n\n".join(
             r.output or f"[image: {r.image_url}]" for r in results if not r.error
         )
-        await self.store.save_conversation(
+        number = await self.store.save_conversation(
             conversation_id,
             prompt=message,
             response=response,
             route=decision.model_dump(),
             steps=[r.record() for r in results],
         )
-        yield {"type": "done", "conversation_id": conversation_id}
+        yield {"type": "done", "conversation_id": conversation_id, "number": number}
 
     async def _run_step(
         self, index: int, step: Step, previous: str, context: str, result: StepResult
@@ -158,7 +158,7 @@ class Orchestrator:
         if model.output == "image":
             image = await self.gateway.generate_image(previous or step.instruction)
             result.served_by = "Meta Model API"
-            result.image_url = self._save_image(image)
+            result.image_url = await self._save_image(image)
             yield self._step_start(index, target_id, result.served_by)
             yield {"type": "image", "index": index, "url": result.image_url}
             return
@@ -187,8 +187,7 @@ class Orchestrator:
             "served_by": served_by,
         }
 
-    def _save_image(self, image: bytes) -> str:
+    async def _save_image(self, image: bytes) -> str:
         name = f"{uuid.uuid4().hex}.png"
-        self.settings.images_dir.mkdir(parents=True, exist_ok=True)
-        (self.settings.images_dir / name).write_bytes(image)
-        return f"/images/{name}"
+        await self.store.save_image(name, image)
+        return f"/api/images/{name}"

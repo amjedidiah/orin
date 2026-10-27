@@ -9,7 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Empty values (e.g. `ORIN_OWNER_TOKEN=` copied from .env.example) mean "unset".
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     meta_api_base_url: str = "https://api.meta.ai/v1"
     model_api_key: SecretStr | None = None
@@ -31,15 +32,19 @@ class Settings(BaseSettings):
     orin_route_fallback: Literal["spark", "free"] = "spark"
 
     orin_owner_token: SecretStr | None = None
+    # A hosted instance (Vercel sets VERCEL=1) stays locked without an owner token, so an empty
+    # or missing value can't open it by accident. ORIN_PUBLIC_DEMO=true opens it on purpose.
+    vercel: bool = False
+    orin_public_demo: bool = False
+    # Postgres (e.g. Neon on Vercel). Unset: a local SQLite file under ORIN_DATA_DIR.
+    database_url: SecretStr | None = None
     orin_data_dir: Path = Path("data")
+    # Built web app to serve at `/` (production); unset in development.
+    orin_web_dist: Path | None = None
 
     @property
     def database_path(self) -> Path:
         return self.orin_data_dir / "orin.db"
-
-    @property
-    def images_dir(self) -> Path:
-        return self.orin_data_dir / "images"
 
 
 @lru_cache

@@ -4,17 +4,17 @@ import json
 import re
 import secrets
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, StringConstraints
 
 from orin.availability import Availability
 from orin.chat import Orchestrator
 from orin.config import get_settings
-from orin.db import Store
+from orin.db import make_store
 from orin.gateway import HealthStatus, ModelGateway
 from orin.registry import MODELS
 
@@ -22,23 +22,26 @@ IMAGE_NAME = re.compile(r"^[0-9a-f]{32}\.png$")
 OWNER_COOKIE = "orin_owner_token"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+app = FastAPI(title="Orin")
+
+
+def build_orchestrator() -> Orchestrator:
     settings = get_settings()
     gateway = ModelGateway(settings)
-    store = Store(settings.database_path)
-    await store.init()
-    app.state.gateway = gateway
-    app.state.store = store
-    app.state.orchestrator = Orchestrator(settings, gateway, store, Availability(gateway))
-    yield
+    database_url = settings.database_url.get_secret_value() if settings.database_url else None
+    store = make_store(database_url, settings.database_path)
+    return Orchestrator(settings, gateway, store, Availability(gateway))
 
 
-app = FastAPI(title="Orin", lifespan=lifespan)
-
-
-def get_orchestrator(request: Request) -> Orchestrator:
-    return request.app.state.orchestrator
+async def get_orchestrator(request: Request) -> Orchestrator:
+    # Built on the first request rather than in a lifespan hook: serverless hosts such as
+    # Vercel don't guarantee ASGI startup events. Tests set `app.state.orchestrator` directly.
+    # Async so it runs on the event loop: with no await between the check and the assignment,
+    # overlapping first requests can't each build a store (and a connection pool).
+    state = request.app.state
+    if getattr(state, "orchestrator", None) is None:
+        state.orchestrator = build_orchestrator()
+    return state.orchestrator
 
 
 OrchestratorDep = Annotated[Orchestrator, Depends(get_orchestrator)]
@@ -53,9 +56,12 @@ def presented_token(request: Request) -> str | None:
 
 
 def require_owner(request: Request, orchestrator: OrchestratorDep) -> None:
-    """Enforce ORIN_OWNER_TOKEN when it is set; an unset token leaves the API open."""
-    expected = orchestrator.settings.orin_owner_token
+    """Enforce ORIN_OWNER_TOKEN when it is set; an unset token leaves a local API open."""
+    settings = orchestrator.settings
+    expected = settings.orin_owner_token
     if expected is None:
+        if settings.vercel and not settings.orin_public_demo:
+            raise HTTPException(status_code=503, detail="ORIN_OWNER_TOKEN is not set")
         return
     token = presented_token(request)
     if token is None or not secrets.compare_digest(
@@ -68,7 +74,8 @@ def require_owner(request: Request, orchestrator: OrchestratorDep) -> None:
         )
 
 
-protected = APIRouter(dependencies=[Depends(require_owner)])
+public = APIRouter(prefix="/api")
+protected = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
 
 class HealthResponse(BaseModel):
@@ -77,7 +84,7 @@ class HealthResponse(BaseModel):
     open_weights_hosts: list[str]
 
 
-@app.get("/health")
+@public.get("/health")
 async def health(orchestrator: OrchestratorDep) -> HealthResponse:
     gateway = orchestrator.gateway
     return HealthResponse(
@@ -142,11 +149,25 @@ async def targets(orchestrator: OrchestratorDep) -> list[TargetStatus]:
 
 
 @protected.get("/images/{name}")
-async def image(name: str, orchestrator: OrchestratorDep) -> FileResponse:
-    path = orchestrator.settings.images_dir / name
-    if not IMAGE_NAME.match(name) or not path.is_file():
+async def image(name: str, request: Request, orchestrator: OrchestratorDep) -> Response:
+    if not IMAGE_NAME.match(name):
         raise HTTPException(status_code=404, detail="image not found")
-    return FileResponse(path, media_type="image/png")
+    # Images never change once saved, so the name is the ETag. `no-cache` makes the browser
+    # revalidate every time, which re-runs the owner check; an unchanged image costs a 304.
+    # The lookup comes first: a missing image is a 404 even for a cached ETag.
+    data = await orchestrator.store.load_image(name)
+    if data is None:
+        raise HTTPException(status_code=404, detail="image not found")
+    headers = {"Cache-Control": "private, no-cache", "ETag": f'"{name}"'}
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    return Response(data, media_type="image/png", headers=headers)
 
 
+app.include_router(public)
 app.include_router(protected)
+
+# In production the same process serves the built web app (`web/dist`) at `/`.
+_web_dist = get_settings().orin_web_dist
+if _web_dist is not None and _web_dist.is_dir():
+    app.mount("/", StaticFiles(directory=_web_dist, html=True), name="web")

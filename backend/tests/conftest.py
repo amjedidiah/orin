@@ -8,7 +8,7 @@ import pytest
 from orin.availability import Availability
 from orin.chat import Orchestrator
 from orin.config import Settings
-from orin.db import Store
+from orin.db import SQLiteStore
 from orin.gateway import HealthStatus, ProviderError, TextStream
 from orin.registry import MUSE_IMAGE, MUSE_SPARK, MUSE_SPARK_OPEN
 
@@ -103,7 +103,7 @@ def clock() -> Clock:
 
 @pytest.fixture
 async def orchestrator(settings: Settings, gateway: FakeGateway, clock: Clock) -> Orchestrator:
-    store = Store(settings.database_path)
+    store = SQLiteStore(settings.database_path)
     await store.init()
     return Orchestrator(settings, gateway, store, Availability(gateway, clock))
 

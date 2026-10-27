@@ -78,8 +78,8 @@ async def test_image_plan_writes_prompt_then_draws(
 
     [image] = of_type(events, "image")
     assert gateway.image_prompts == ["Hello from Spark"]
-    name = image["url"].removeprefix("/images/")
-    assert (orchestrator.settings.images_dir / name).read_bytes() == b"\x89PNG fake"
+    name = image["url"].removeprefix("/api/images/")
+    assert await orchestrator.store.load_image(name) == b"\x89PNG fake"
 
 
 async def test_image_failure_has_no_text_fallback(orchestrator: Orchestrator, gateway: FakeGateway):

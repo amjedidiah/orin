@@ -1,6 +1,7 @@
 """Muse Spark picks the best-fit model for each request."""
 
 import json
+import logging
 from collections.abc import Sequence
 from typing import Any
 
@@ -8,6 +9,8 @@ from pydantic import BaseModel, ValidationError
 
 from orin.gateway import Gateway, ProviderError
 from orin.registry import MODELS, MUSE_IMAGE, MUSE_SPARK
+
+logger = logging.getLogger(__name__)
 
 INSTRUCTIONS = """You are Orin's router. Pick the best-fit model for the user's request.
 
@@ -106,7 +109,8 @@ async def route(
             INSTRUCTIONS.format(models=describe(target_ids)), prompt, schema(target_ids), "route"
         )
         decision = RouteDecision.model_validate(json.loads(raw))
-    except ProviderError:
+    except ProviderError as error:
+        logger.warning("router failed (%s): %s", error.kind, error)
         return default_route(message, "The router was unavailable, so Orin used Muse Spark.")
     except (ValidationError, json.JSONDecodeError):
         return default_route(

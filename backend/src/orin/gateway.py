@@ -45,7 +45,8 @@ def classify(exc: Exception) -> ProviderError:
             kind = "server"
         else:
             kind = "bad_request"
-        return ProviderError(kind, f"HTTP {status}", status)
+        # The provider's own message goes to the logs only; users see the short reason.
+        return ProviderError(kind, f"HTTP {status}: {exc.message}"[:500], status)
     return ProviderError("server", type(exc).__name__)
 
 

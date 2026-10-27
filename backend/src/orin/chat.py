@@ -1,5 +1,6 @@
 """One chat turn: route, run each step down the fallback chain, store the result."""
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -13,6 +14,8 @@ from orin.registry import MODELS, MUSE_IMAGE, MUSE_SPARK, MUSE_SPARK_OPEN
 from orin.router import Step, route
 
 Event = dict[str, Any]
+
+logger = logging.getLogger(__name__)
 
 CONTEXT_TURNS = 5
 CONTEXT_CHARS = 500
@@ -115,6 +118,7 @@ class Orchestrator:
                     yield event
                 return
             except ProviderError as error:
+                logger.warning("%s failed (%s): %s", candidate, error.kind, error)
                 self.availability.record_failure(candidate, error)
                 if result.output:
                     # Already streamed part of an answer; switching models would garble it.

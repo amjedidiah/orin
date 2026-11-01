@@ -1,66 +1,48 @@
 import type { ChatEvent, StoredConversation, Target } from './types'
 
-const TOKEN_KEY = 'orin.ownerToken'
-const TOKEN_COOKIE = 'orin_owner_token'
+const LEGACY_TOKEN_KEY = 'orin.ownerToken'
+const LEGACY_TOKEN_COOKIE = 'orin_owner_token'
+const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 export class Unauthorized extends Error {}
+export class RateLimited extends Error {}
+export class NotConfigured extends Error {}
 
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
-
-function readToken(): string | null {
+/** Earlier versions kept the raw owner token where page scripts could read it. Erase it. */
+export function forgetLegacyToken() {
   try {
-    return localStorage.getItem(TOKEN_KEY)
+    localStorage.removeItem(LEGACY_TOKEN_KEY)
   } catch {
-    return null
+    // Storage is blocked, so nothing was stored.
   }
-}
-
-// <img> requests can't send headers, so images authenticate with this cookie. It lasts as
-// long as the stored key, so past images still load after a browser restart.
-function writeCookie(token: string) {
-  const secure = location.protocol === 'https:' ? '; Secure' : ''
-  document.cookie =
-    `${TOKEN_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${COOKIE_MAX_AGE}; ` +
-    `SameSite=Strict${secure}`
-}
-
-export function saveToken(token: string) {
-  try {
-    localStorage.setItem(TOKEN_KEY, token)
-  } catch {
-    // Private mode: the cookie still carries the key.
-  }
-  writeCookie(token)
-}
-
-/** Re-issue the image cookie from the stored key (e.g. after it expired or was cleared). */
-export function syncTokenCookie() {
-  const token = readToken()
-  if (token) writeCookie(token)
-}
-
-export function clearToken() {
-  try {
-    localStorage.removeItem(TOKEN_KEY)
-  } catch {
-    // Nothing stored.
-  }
-  document.cookie = `${TOKEN_COOKIE}=; Path=/; Max-Age=0; SameSite=Strict`
-}
-
-function headers(extra: Record<string, string> = {}): HeadersInit {
-  const token = readToken()
-  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
+  document.cookie = `${LEGACY_TOKEN_COOKIE}=; Path=/; Max-Age=0; SameSite=Strict`
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    headers: headers(init.headers as Record<string, string>),
-  })
+  const response = await fetch(`/api${path}`, init)
   if (response.status === 401) throw new Unauthorized()
+  if (response.status === 429) throw new RateLimited()
+  if (response.status === 503) throw new NotConfigured()
   if (!response.ok) throw new Error(`${path} failed with HTTP ${response.status}`)
   return response
+}
+
+/** Swap the owner key for an HttpOnly session cookie; the key itself is never stored. */
+export async function createSession(token: string): Promise<void> {
+  await request('/session', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+    headers: JSON_HEADERS,
+  })
+}
+
+export async function endSession(): Promise<void> {
+  await request('/session', { method: 'DELETE' })
+}
+
+export async function fetchSessionRequired(): Promise<boolean> {
+  const { required } = (await (await request('/session')).json()) as { required: boolean }
+  return required
 }
 
 export async function fetchTargets(): Promise<Target[]> {
@@ -76,7 +58,7 @@ export async function* streamChat(message: string, signal?: AbortSignal): AsyncG
   const response = await request('/chat', {
     method: 'POST',
     body: JSON.stringify({ message }),
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     signal,
   })
   if (!response.body) throw new Error('The answer stream did not open.')

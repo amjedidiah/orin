@@ -6,5 +6,6 @@ React + TypeScript + Vite. In development, `/api/*` is proxied to the backend on
 bun install
 bun run dev    # http://localhost:5173 (start the backend first)
 bun run lint
+bun run test
 bun run build
 ```

@@ -3,17 +3,18 @@ import { type FormEvent, useState } from 'react'
 
 type Props = {
   failed: boolean
+  busy: boolean
   /** A connection problem, shown instead of a key rejection. */
   error: string | null
   onSubmit: (token: string) => void
 }
 
-export function OperatorKey({ failed, error, onSubmit }: Props) {
+export function OperatorKey({ failed, busy, error, onSubmit }: Props) {
   const [token, setToken] = useState('')
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    if (token.trim()) onSubmit(token.trim())
+    if (token.trim() && !busy) onSubmit(token.trim())
   }
 
   return (
@@ -45,8 +46,8 @@ export function OperatorKey({ failed, error, onSubmit }: Props) {
           {error}
         </p>
       )}
-      <button type="submit" className="plug-in" disabled={!token.trim()}>
-        Unlock the board
+      <button type="submit" className="plug-in" disabled={!token.trim() || busy}>
+        {busy ? 'Unlocking…' : 'Unlock the board'}
       </button>
     </form>
   )

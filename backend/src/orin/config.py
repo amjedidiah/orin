@@ -32,10 +32,12 @@ class Settings(BaseSettings):
     orin_route_fallback: Literal["spark", "free"] = "spark"
 
     orin_owner_token: SecretStr | None = None
-    # A hosted instance (Vercel sets VERCEL=1) stays locked without an owner token, so an empty
-    # or missing value can't open it by accident. ORIN_PUBLIC_DEMO=true opens it on purpose.
+    # Without an owner token the API stays locked, so an empty or missing value can't open it by
+    # accident. ORIN_PUBLIC_DEMO=true opens it on purpose; ORIN_LOCAL_OPEN=true opens it for local
+    # development and is ignored on Vercel (which sets VERCEL=1).
     vercel: bool = False
     orin_public_demo: bool = False
+    orin_local_open: bool = False
     # Postgres (e.g. Neon on Vercel). Unset: a local SQLite file under ORIN_DATA_DIR.
     database_url: SecretStr | None = None
     orin_data_dir: Path = Path("data")

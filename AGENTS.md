@@ -25,7 +25,7 @@ uv run ruff check . && uv run ruff format --check . && uv run pyright
 # web/
 bun install
 bun run dev                                            # dev server on :5173
-bun run lint && bun run build
+bun run lint && bun run test && bun run build
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these on every push. Keep it green.

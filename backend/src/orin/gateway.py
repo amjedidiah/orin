@@ -1,6 +1,7 @@
 """Calls to model providers, behind one interface so tests can swap it out."""
 
 import base64
+import time
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -64,6 +65,7 @@ class OpenWeightsHost:
 
 
 HealthStatus = Literal["ok", "error", "not_configured"]
+HEALTH_CACHE_SECONDS = 30.0
 
 
 class Gateway(Protocol):
@@ -98,6 +100,7 @@ class ModelGateway:
             else None
         )
         self.open_weights_hosts = self._build_hosts(settings)
+        self._meta_status: tuple[float, HealthStatus] | None = None
 
     @staticmethod
     def _build_hosts(settings: Settings) -> Sequence[OpenWeightsHost]:
@@ -130,12 +133,17 @@ class ModelGateway:
     async def meta_api_status(self) -> HealthStatus:
         if self.meta is None:
             return "not_configured"
+        # /health is public, so repeat hits reuse the last answer instead of calling Meta.
+        if self._meta_status and time.monotonic() < self._meta_status[0]:
+            return self._meta_status[1]
+        status: HealthStatus = "ok"
         try:
-            # Short timeout, no retries: /health is public and must answer fast.
+            # Short timeout, no retries: /health must answer fast.
             await self.meta.with_options(timeout=5.0, max_retries=0).models.list()
         except Exception:
-            return "error"
-        return "ok"
+            status = "error"
+        self._meta_status = (time.monotonic() + HEALTH_CACHE_SECONDS, status)
+        return status
 
     def _meta(self) -> AsyncOpenAI:
         if self.meta is None:

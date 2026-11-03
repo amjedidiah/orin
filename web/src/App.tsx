@@ -26,7 +26,7 @@ const EXAMPLES = [
   'Make a launch banner for my side project.',
 ]
 
-type Lock = 'open' | 'locked' | 'rejected'
+type Lock = 'open' | 'locked' | 'rejected' | 'unconfigured'
 
 type Line = Pick<ReplayLine, 'fetchTargets' | 'fetchHistory' | 'streamChat'>
 
@@ -36,8 +36,6 @@ const LIVE_LINE: Line = { fetchTargets, fetchHistory, streamChat }
 const REPLAY_NAME = import.meta.env.DEV ? new URLSearchParams(location.search).get('replay') : null
 
 const UNREACHABLE = 'Orin is unreachable right now. Check that the server is running, then reload.'
-const NOT_CONFIGURED =
-  'This instance is locked until ORIN_OWNER_TOKEN is set on the server, with at least 32 characters.'
 
 function App() {
   const [targets, setTargets] = useState<Target[]>([])
@@ -78,11 +76,11 @@ function App() {
       setLock('open')
       setLoadError(null)
     } catch (error) {
-      if (error instanceof Unauthorized) {
-        setLock('locked')
+      if (error instanceof Unauthorized || error instanceof NotConfigured) {
+        setLock(error instanceof NotConfigured ? 'unconfigured' : 'locked')
         setLoadError(null)
       } else {
-        setLoadError(error instanceof NotConfigured ? NOT_CONFIGURED : UNREACHABLE)
+        setLoadError(UNREACHABLE)
       }
     } finally {
       setLoaded(true)
@@ -125,13 +123,17 @@ function App() {
         setLock('rejected')
         return
       }
+      if (error instanceof NotConfigured) {
+        setLock('unconfigured')
+        return
+      }
       // These failures say nothing about the key; drop any stale rejection.
       setLock('locked')
-      if (error instanceof RateLimited) {
-        setLoadError('Too many tries. Wait 15 minutes, then try the key again.')
-      } else {
-        setLoadError(error instanceof NotConfigured ? NOT_CONFIGURED : UNREACHABLE)
-      }
+      setLoadError(
+        error instanceof RateLimited
+          ? 'Too many tries. Wait 15 minutes, then try the key again.'
+          : UNREACHABLE,
+      )
     } finally {
       setUnlocking(false)
     }
@@ -167,8 +169,8 @@ function App() {
         }
       }
     } catch (error) {
-      if (error instanceof Unauthorized) {
-        setLock('locked')
+      if (error instanceof Unauthorized || error instanceof NotConfigured) {
+        setLock(error instanceof NotConfigured ? 'unconfigured' : 'locked')
         return
       }
       const reason =
@@ -208,6 +210,7 @@ function App() {
     return (
       <main className="board board-locked">
         <OperatorKey
+          configured={lock !== 'unconfigured'}
           failed={lock === 'rejected'}
           busy={unlocking}
           error={loadError}

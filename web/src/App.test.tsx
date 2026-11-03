@@ -73,7 +73,6 @@ describe('owner session', () => {
   it.each([
     [401, "That key didn't fit"],
     [429, 'Too many tries'],
-    [503, 'ORIN_OWNER_TOKEN is set'],
     [500, 'unreachable'],
   ])('shows why an unlock failed with HTTP %i', async (status, message) => {
     stubServer({ ...LOCKED, 'POST /api/session': { status } })
@@ -85,12 +84,40 @@ describe('owner session', () => {
     expect(screen.getByRole('button', { name: 'Unlock the board' })).toBeEnabled()
   })
 
-  it('tells the owner when the server has no usable token', async () => {
+  it('shuts the board when the server has no usable token', async () => {
     stubServer({ 'GET /api/targets': { status: 503 }, 'GET /api/history': { status: 503 } })
 
     render(<App />)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('at least 32 characters')
+    expect(await screen.findByRole('heading', { name: "This board isn't set up" })).toBeVisible()
+    expect(screen.getByText(/at least 32 characters/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Ask Orin')).toBeNull()
+    expect(screen.queryByLabelText('Owner key')).toBeNull()
+  })
+
+  it('shuts the board when unlocking finds no usable token', async () => {
+    stubServer({ ...LOCKED, 'POST /api/session': { status: 503 } })
+    render(<App />)
+
+    await submitKey()
+
+    expect(await screen.findByRole('heading', { name: "This board isn't set up" })).toBeVisible()
+    expect(screen.queryByLabelText('Owner key')).toBeNull()
+  })
+
+  it('shuts the board when the token goes away mid-session', async () => {
+    stubServer({
+      ...OPEN_DATA,
+      'GET /api/session': { status: 200, body: { required: false } },
+      'POST /api/chat': { status: 503 },
+    })
+    render(<App />)
+    await screen.findByText('The board is quiet.')
+
+    await userEvent.type(screen.getByLabelText('Ask Orin'), 'hello{Enter}')
+
+    expect(await screen.findByRole('heading', { name: "This board isn't set up" })).toBeVisible()
+    expect(screen.queryByLabelText('Ask Orin')).toBeNull()
   })
 
   it('locks the board', async () => {

@@ -51,3 +51,12 @@ async def test_images_round_trip(store: PostgresStore):
 
     assert await store.load_image("f" * 32 + ".png") == b"\x89PNG data"
     assert await store.load_image("missing.png") is None
+
+
+async def test_rate_limit_counts_until_the_window_ends(store: PostgresStore):
+    assert await store.hit_rate_limit("client", 2, 60)
+    assert await store.hit_rate_limit("client", 2, 60)
+    assert not await store.hit_rate_limit("client", 2, 60)
+    assert await store.hit_rate_limit("other", 2, 60)
+    assert await store.hit_rate_limit("expiring", 1, 0)
+    assert await store.hit_rate_limit("expiring", 1, 60)

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  NotConfigured,
+  RateLimited,
   Unauthorized,
-  clearToken,
+  createSession,
+  endSession,
   fetchHistory,
+  fetchSessionRequired,
   fetchTargets,
-  saveToken,
+  forgetLegacyToken,
   streamChat,
-  syncTokenCookie,
 } from './api'
 import { applyEvent, newTurn, patchedTarget, turnFromHistory } from './board'
 import { CallSlip } from './components/CallSlip'
@@ -23,7 +26,7 @@ const EXAMPLES = [
   'Make a launch banner for my side project.',
 ]
 
-type Lock = 'open' | 'locked' | 'rejected'
+type Lock = 'open' | 'locked' | 'rejected' | 'unconfigured'
 
 type Line = Pick<ReplayLine, 'fetchTargets' | 'fetchHistory' | 'streamChat'>
 
@@ -31,6 +34,8 @@ const LIVE_LINE: Line = { fetchTargets, fetchHistory, streamChat }
 
 // Dev only: `?replay=<name>` swaps the server for a labelled synthetic call (see replay.ts).
 const REPLAY_NAME = import.meta.env.DEV ? new URLSearchParams(location.search).get('replay') : null
+
+const UNREACHABLE = 'Orin is unreachable right now. Check that the server is running, then reload.'
 
 function App() {
   const [targets, setTargets] = useState<Target[]>([])
@@ -41,6 +46,8 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [replay, setReplay] = useState<ReplayLine | null>(null)
+  const [unlocking, setUnlocking] = useState(false)
+  const [sessionRequired, setSessionRequired] = useState(false)
   const line = useRef<Line>(LIVE_LINE)
 
   const boardRef = useRef<HTMLDivElement>(null)
@@ -51,29 +58,29 @@ function App() {
 
   const names = useMemo(() => new Map(targets.map((t) => [t.id, t])), [targets])
 
-  const load = useCallback(async (attempt: Lock = 'open') => {
+  const load = useCallback(async () => {
     try {
       if (import.meta.env.DEV && REPLAY_NAME) {
         const found = (await import('./replay')).replayLine(REPLAY_NAME)
         if (found) line.current = found
         setReplay(found)
       }
-      const [nextTargets, history] = await Promise.all([
+      const [nextTargets, history, required] = await Promise.all([
         line.current.fetchTargets(),
         line.current.fetchHistory(),
+        line.current === LIVE_LINE ? fetchSessionRequired() : false,
       ])
       setTargets(nextTargets)
       setTurns(history.reverse().map(turnFromHistory))
+      setSessionRequired(required)
       setLock('open')
       setLoadError(null)
     } catch (error) {
-      if (error instanceof Unauthorized) {
-        setLock(attempt === 'rejected' ? 'rejected' : 'locked')
+      if (error instanceof Unauthorized || error instanceof NotConfigured) {
+        setLock(error instanceof NotConfigured ? 'unconfigured' : 'locked')
         setLoadError(null)
       } else {
-        // A failed unlock attempt says nothing about the key; drop the stale rejection.
-        setLock((current) => (current === 'rejected' ? 'locked' : current))
-        setLoadError('Orin is unreachable right now. Check that the server is running, then reload.')
+        setLoadError(UNREACHABLE)
       }
     } finally {
       setLoaded(true)
@@ -81,7 +88,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    syncTokenCookie()
+    forgetLegacyToken()
     // Fetch on mount; every state update in `load` happens after an await.
     // oxlint-disable-next-line react/set-state-in-effect
     void load()
@@ -104,10 +111,44 @@ function App() {
     if (log) stickToBottom.current = log.scrollHeight - log.scrollTop - log.clientHeight < 80
   }
 
-  function unlock(token: string) {
-    saveToken(token)
-    setLoaded(false)
-    void load('rejected')
+  async function unlock(token: string) {
+    setUnlocking(true)
+    setLoadError(null)
+    try {
+      await createSession(token)
+      setLoaded(false)
+      await load()
+    } catch (error) {
+      if (error instanceof Unauthorized) {
+        setLock('rejected')
+        return
+      }
+      if (error instanceof NotConfigured) {
+        setLock('unconfigured')
+        return
+      }
+      // These failures say nothing about the key; drop any stale rejection.
+      setLock('locked')
+      setLoadError(
+        error instanceof RateLimited
+          ? 'Too many tries. Wait 15 minutes, then try the key again.'
+          : UNREACHABLE,
+      )
+    } finally {
+      setUnlocking(false)
+    }
+  }
+
+  async function lockBoard() {
+    try {
+      await endSession()
+      setTurns([])
+      setTargets([])
+      setLoadError(null)
+      setLock('locked')
+    } catch {
+      setLoadError("Couldn't lock the board. Check your connection and try again.")
+    }
   }
 
   async function send(message: string) {
@@ -128,11 +169,14 @@ function App() {
         }
       }
     } catch (error) {
-      if (error instanceof Unauthorized) {
-        clearToken()
-        setLock('locked')
+      if (error instanceof Unauthorized || error instanceof NotConfigured) {
+        setLock(error instanceof NotConfigured ? 'unconfigured' : 'locked')
         return
       }
+      const reason =
+        error instanceof RateLimited
+          ? 'This demo has reached its call limit. Try again later.'
+          : 'The line dropped before the answer finished. Check your connection and ask again.'
       update((t) => ({
         ...t,
         status: 'done',
@@ -145,7 +189,7 @@ function App() {
             text: '',
             imageUrl: null,
             fallbacks: [],
-            error: 'The line dropped before the answer finished. Check your connection and ask again.',
+            error: reason,
           },
         ],
       }))
@@ -165,14 +209,26 @@ function App() {
   if (lock !== 'open') {
     return (
       <main className="board board-locked">
-        <OperatorKey failed={lock === 'rejected'} error={loadError} onSubmit={unlock} />
+        <OperatorKey
+          configured={lock !== 'unconfigured'}
+          failed={lock === 'rejected'}
+          busy={unlocking}
+          error={loadError}
+          onSubmit={(token) => void unlock(token)}
+        />
       </main>
     )
   }
 
   return (
     <div className="board" ref={boardRef}>
-      <JackField targets={targets} liveTarget={liveTarget} registerSocket={registerSocket} />
+      <JackField
+        targets={targets}
+        liveTarget={liveTarget}
+        registerSocket={registerSocket}
+        onLock={sessionRequired ? () => void lockBoard() : undefined}
+        lockDisabled={busy}
+      />
 
       <main className="exchange">
         <h1 className="visually-hidden">Orin</h1>

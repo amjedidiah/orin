@@ -88,7 +88,11 @@ class Clock:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    return Settings(_env_file=None, orin_data_dir=tmp_path)  # pyright: ignore[reportCallIssue]
+    return Settings(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        orin_data_dir=tmp_path,
+        orin_local_open=True,
+    )
 
 
 @pytest.fixture

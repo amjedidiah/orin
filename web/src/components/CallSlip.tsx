@@ -7,6 +7,9 @@ import type { Target, Turn } from '../types'
 
 // Models often separate lines with single newlines; keep them as line breaks.
 const REMARK_PLUGINS = [remarkBreaks]
+// A model's image link would load by itself and could carry data out in its URL. Orin's own
+// generated images arrive as `step.imageUrl`, never through Markdown.
+const BLOCKED_MARKDOWN = ['img']
 
 type Props = {
   turn: Turn
@@ -120,7 +123,9 @@ export function CallSlip({ turn, names, registerPlug }: Props) {
               )}
               {(last || !multiStep) && step.text && (
                 <div className="answer-text">
-                  <Markdown remarkPlugins={REMARK_PLUGINS}>{step.text}</Markdown>
+                  <Markdown remarkPlugins={REMARK_PLUGINS} disallowedElements={BLOCKED_MARKDOWN}>
+                    {step.text}
+                  </Markdown>
                 </div>
               )}
               {step.imageUrl && (

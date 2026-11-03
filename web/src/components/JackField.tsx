@@ -1,3 +1,4 @@
+import { Lock } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { Target } from '../types'
 
@@ -5,9 +6,12 @@ type Props = {
   targets: Target[]
   liveTarget: string | null
   registerSocket: (id: string, node: HTMLElement | null) => void
+  /** Ends the owner session. Absent when the instance has no lock. */
+  onLock?: () => void
+  lockDisabled?: boolean
 }
 
-export function JackField({ targets, liveTarget, registerSocket }: Props) {
+export function JackField({ targets, liveTarget, registerSocket, onLock, lockDisabled }: Props) {
   const fieldRef = useRef<HTMLElement>(null)
 
   // On the phone strip, keep the jack that's answering in view.
@@ -59,6 +63,18 @@ export function JackField({ targets, liveTarget, registerSocket }: Props) {
           )
         })}
       </ul>
+      {onLock && (
+        <button
+          type="button"
+          className="lock-board"
+          aria-label="Lock board"
+          disabled={lockDisabled}
+          onClick={onLock}
+        >
+          <Lock aria-hidden="true" size={15} />
+          <span className="lock-board-label">Lock board</span>
+        </button>
+      )}
     </nav>
   )
 }

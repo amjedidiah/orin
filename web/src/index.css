@@ -823,6 +823,35 @@ details[open] > summary .summary-chevron {
   text-transform: uppercase;
 }
 
+.lock-board {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: none;
+  align-self: flex-start;
+  min-height: 2.75rem;
+  margin-top: auto;
+  padding: 0 0.75rem;
+  border: 1px solid var(--panel-rule);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--face-plate);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.lock-board:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.lock-board:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 /* ---------- Phone: the board folds to a lamp strip ---------- */
 
 @media (max-width: 860px) {
@@ -851,6 +880,16 @@ details[open] > summary .summary-chevron {
     font-size: 1.25rem;
   }
 
+  /* Icon only on the strip; the button keeps its accessible name and tap size. */
+  .lock-board {
+    align-self: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    margin: 0 0 0 auto;
+    padding: 0;
+  }
+
+  .lock-board-label,
   .nameplate-sub,
   .socket,
   .jack-reason,

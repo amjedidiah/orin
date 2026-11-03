@@ -4,7 +4,7 @@ Python + FastAPI. See the repository README for what Orin does.
 
 ```sh
 uv sync                                  # install
-cp .env.example .env                     # then fill in MODEL_API_KEY
+cp .env.example .env                     # then fill in MODEL_API_KEY, and ORIN_OWNER_TOKEN or ORIN_LOCAL_OPEN=true
 uv run orin                              # serve on http://127.0.0.1:8000
 uv run pytest                            # tests
 uv run ruff check . && uv run ruff format --check . && uv run pyright

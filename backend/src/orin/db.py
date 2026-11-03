@@ -7,6 +7,7 @@ prepare their schema on first use, so nothing depends on app startup hooks.
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -61,6 +62,11 @@ CREATE TABLE IF NOT EXISTS summaries (
     to_cursor INTEGER NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT PRIMARY KEY,
+    hits INTEGER NOT NULL,
+    reset_at REAL NOT NULL
+);
 """
 
 POSTGRES_SCHEMA = """
@@ -106,6 +112,11 @@ CREATE TABLE IF NOT EXISTS summaries (
     from_cursor BIGINT NOT NULL,
     to_cursor BIGINT NOT NULL,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT PRIMARY KEY,
+    hits INTEGER NOT NULL,
+    reset_at DOUBLE PRECISION NOT NULL
 );
 """
 
@@ -162,6 +173,10 @@ class Store(Protocol):
     async def save_image(self, name: str, data: bytes) -> None: ...
 
     async def load_image(self, name: str) -> bytes | None: ...
+
+    async def hit_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
+        """Count one hit against `key`; False once it passes `limit` within the window."""
+        ...
 
 
 class SQLiteStore:
@@ -242,6 +257,21 @@ class SQLiteStore:
                 await db.execute_fetchall("SELECT data FROM images WHERE name = ?", (name,))
             )
         return bytes(rows[0][0]) if rows else None
+
+    async def hit_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
+        current = time.time()
+        async with self._connect() as db:
+            await db.execute("DELETE FROM rate_limits WHERE reset_at <= ?", (current,))
+            cursor = await db.execute(
+                "INSERT INTO rate_limits (key, hits, reset_at) VALUES (?, 1, ?)"
+                " ON CONFLICT (key) DO UPDATE SET hits = rate_limits.hits + 1 RETURNING hits",
+                (key, current + window_seconds),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+            await db.commit()
+        assert row is not None
+        return row[0] <= limit
 
 
 class PostgresStore:
@@ -335,6 +365,19 @@ class PostgresStore:
         pool = await self._get_pool()
         data = await pool.fetchval("SELECT data FROM images WHERE name = $1", name)
         return bytes(data) if data is not None else None
+
+    async def hit_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
+        current = time.time()
+        pool = await self._get_pool()
+        async with pool.acquire() as connection, connection.transaction():
+            await connection.execute("DELETE FROM rate_limits WHERE reset_at <= $1", current)
+            hits = await connection.fetchval(
+                "INSERT INTO rate_limits (key, hits, reset_at) VALUES ($1, 1, $2)"
+                " ON CONFLICT (key) DO UPDATE SET hits = rate_limits.hits + 1 RETURNING hits",
+                key,
+                current + window_seconds,
+            )
+        return hits <= limit
 
 
 def make_store(database_url: str | None, sqlite_path: Path) -> Store:
